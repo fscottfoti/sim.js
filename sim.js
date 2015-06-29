@@ -6,8 +6,8 @@ var buildings_types = {
 
 
 var rent_own = {
-    rent: 1, //?
-    own: 2
+    own: 1,
+    rent: 2
 };
 
 
@@ -16,7 +16,8 @@ var CONFIG = {
     height_per_story: 12,
     footprint_efficiency: .7,
     building_efficiency: .8,
-    ave_unit_size: 1000
+    ave_unit_size: 1000,
+    relocation_rate: .05
 };
 
 
@@ -36,11 +37,9 @@ Sim = {
 
     loadLogsums: function (resolve, reject) {
         d3.csv("data/logsums.csv", function (d) {
-            l = {};
-            _.each(d, function (obj) {
-                this[+obj.taz] = obj;
-            }, l)
-            Sim.d.logsums = l;
+            Sim.d.logsums = _.object(_.map(d, function(obj) {
+                return [+obj.taz, obj];
+            }));
             resolve();
         });
     },
@@ -48,14 +47,8 @@ Sim = {
 
     loadJson: function (resolve, reject) {
         d3.json("data/hay2.json", function (e, d) {
-
             if (e) return reject(e);
-
-            _.each(d, function (obj, key) {
-                // don't overwrite the whole dictionary
-                // lots of asynchronous stuff will go on
-                Sim.d[key] = obj;
-            });
+            _.extend(Sim.d, d);
             resolve();
         });
     },
@@ -75,7 +68,7 @@ Sim = {
 
         var fmt = function (n) {
             return numeral(n).format('0,0');
-        }
+        };
 
         console.log("min: " + fmt(d3.quantile(arr, 0.0)));
         console.log("25%: " + fmt(d3.quantile(arr, 0.25)));
@@ -124,8 +117,7 @@ Sim = {
                         return e.hownrent == rent_own.rent;
                     })
                 };
-            })
-            .entries(Sim._obj2arr(Sim.d.households));
+            }).entries(Sim._obj2arr(Sim.d.households));
 
         Sim.d3RollupToObject(data, "zones");
     },
@@ -152,8 +144,7 @@ Sim = {
                         return +e.residential_units * +e.building_type_id == buildings_types.HS;
                     })
                 };
-            })
-            .entries(Sim._obj2arr(Sim.d.buildings));
+            }).entries(Sim._obj2arr(Sim.d.buildings));
 
         Sim.d3RollupToObject(data, "zones");
     },
@@ -167,24 +158,23 @@ Sim = {
 
     zonePriceVars: function () {
 
-        // these are zone variables we get by rolling up buildings to zones
+        // these are price zone variables we get by rolling up buildings to zones
         data = d3.nest()
             .key(function (d) {
-                return Sim.d.buildings.zone_id;
+                return +d.zone_id;
             }).rollup(function (d) {
                 return {
                     "ave_residential_price": d3.mean(d, function (e) {
                         return +e.residential_price;
                     })
                 };
-            })
-            .entries(Sim._obj2arr(Sim.d.buildings));
+            }).entries(Sim._obj2arr(Sim.d.buildings));
 
         Sim.d3RollupToObject(data, "zones");
     },
 
 
-    rsh: function (resolve, reject) {
+    rsh: function () {
         _.each(Sim.d.buildings, function (b, id, obj) {
             var p = 0,
                 z = +b.zone_id;
@@ -223,24 +213,43 @@ Sim = {
     },
 
 
+    // returns index of choice, given the pdf
+    weightedChoice: function (pdf) {
+        var r = Math.random();
+        for (var i = 0 ; i < pdf.length ; i ++) {
+            r -= pdf[i];
+            if( r < 0 ) {
+                return i;
+            }
+        }
+        console.log('FATAL: weights probably not normalized');
+    },
+
+
     // the actual choice part of a DCM
-    logit_choice: function (chooser, alternatives, utility_func) {
+    logitChoice: function (chooser, alternatives, utility_func) {
+
         exp_utils = _.map(alternatives, function (alt) {
             return Math.exp(utility_func(chooser, alt));
-        })
-        var probs = d3.normalize(exp_utils); // normalize doesn't exist?
-        return _.sample(alternatives, probs, 1) // syntax?
+        });
+
+        var sum_exp_utils = d3.sum(exp_utils);
+        var probs = _.map(exp_utils, function (exp_util) {
+            return exp_util / sum_exp_utils;
+        });
+
+        return alternatives[Sim.weightedChoice(probs)];
     },
 
 
     // discrete choice model
-    DCM: function (choosers, alternatives, utility_func, config) {
+    choiceModel: function (choosers, alternatives, utility_func, config) {
 
         return _.map(choosers, function (chooser) {
 
-            var choice = Sim.choice(
+            var choice = Sim.logitChoice(
                 chooser,
-                _.sample(alternatives, config.SAMPLE_SIZE),
+                _.sample(alternatives, config.sample_size),
                 utility_func
             );
 
@@ -253,14 +262,14 @@ Sim = {
     },
 
 
-    rate_relocation: function (rate) {
-        return _.sample(Sim.d.households, Sim.d.households.length * rate);
+    rate_relocation: function (obj, rate) {
+        return _.sample(obj, Math.floor(_.size(obj) * rate));
     },
 
 
     vacant_residential_units: function () {
-        // to do - thinking we can keep vacant units
-        // and filled units in separate collections??
+        // this isn't correct - should be units not buildings
+        return Sim.d.buildings;
     },
 
     hlcm: function () {
@@ -274,47 +283,52 @@ Sim = {
             if (chooser.income_quartile == 1) {
 
                 u += Sim.d.logsums[z].autoPeakTotal * -0.03172683451212808;
-                u += Sim.d.zones[z].ave_income * -0.4808734060559246;
+                u += Math.log1p(Sim.d.zones[z].ave_income) * -0.4808734060559246;
                 u += Math.log1p(alt.residential_price) * -0.3187340340756076;
-                u += Sim.d.zones[z].sum_residential_units * 0.5737292436764879;
+                u += Math.log1p(Sim.d.zones[z].sum_residential_units) * 0.5737292436764879;
 
             } else if (chooser.income_quartile == 2) {
 
                 u += Sim.d.logsums[z].autoPeakTotal * -0.03462001203730808;
-                u += Sim.d.zones[z].ave_income * -0.34042982330463095;
+                u += Math.log1p(Sim.d.zones[z].ave_income) * -0.34042982330463095;
                 u += Math.log1p(alt.residential_price) * -0.07466351930242808;
-                u += Sim.d.zones[z].sum_residential_units * 0.37924072884537574;
+                u += Math.log1p(Sim.d.zones[z].sum_residential_units) * 0.37924072884537574;
 
             } else if (chooser.income_quartile == 3) {
 
                 u += Sim.d.logsums[z].autoPeakTotal * 0.05242066954548329;
-                u += Sim.d.zones[z].ave_income * 0.029616837778679767;
+                u += Math.log1p(Sim.d.zones[z].ave_income) * 0.029616837778679767;
                 u += Math.log1p(alt.residential_price) * -0.014507449861351055;
-                u += Sim.d.zones[z].sum_residential_units * 0.20167752480311513;
+                u += Math.log1p(Sim.d.zones[z].sum_residential_units) * 0.20167752480311513;
 
             } else if (chooser.income_quartile == 4) {
 
                 u += Sim.d.logsums[z].autoPeakTotal * 0.0039409609269164605;
-                u += Sim.d.zones[z].ave_income * 1.2792993302680151;
+                u += Math.log1p(Sim.d.zones[z].ave_income) * 1.2792993302680151;
                 u += Math.log1p(alt.residential_price) * -0.01;
-                u += Sim.d.zones[z].sum_residential_units * 0.19705090067327294;
+                u += Math.log1p(Sim.d.zones[z].sum_residential_units) * 0.19705090067327294;
 
             } else {
                 console.log('FATAL');
             }
-        }
+            return u;
+        };
 
         var config = {
+            remove_choice: true,
             sample_size: 50
-        }
+        };
 
-        var choices = Sim.DCM(
-            Sim.rate_relocation(),
+        var choices = Sim.choiceModel(
+            Sim.rate_relocation(Sim.d.households, CONFIG.relocation_rate),
             Sim.vacant_residential_units(),
             utility_func,
             config
         );
+
+        console.log(choices);
     },
+
 
     simple_residential_proforma: function (parcel_size,
                                            purchase_price, res_sales_price_sqft,
@@ -387,4 +401,4 @@ Sim = {
 
 Math.clip = function (number, min, max) {
     return Math.max(min, Math.min(number, max));
-}
+};
