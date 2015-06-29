@@ -1,18 +1,37 @@
 <html>
-  <head>
-    <meta http-equiv='Content-type' content='text/html; charset=utf-8'>
+<head>
+    <meta http-equiv='Content-type'
+          content='text/html; charset=utf-8'>
     <title>Sim.js Example</title>
-    <link rel="stylesheet" href="http://bootswatch.com/cosmo/bootstrap.min.css">
-  </head>
+    <link rel="stylesheet"
+          href="http://bootswatch.com/cosmo/bootstrap.min.css">
+</head>
 
-  <body>
-    <script src="//cdnjs.cloudflare.com/ajax/libs/d3/3.5.5/d3.min.js"></script>
-    <script src="//cdnjs.cloudflare.com/ajax/libs/underscore.js/1.8.3/underscore-min.js"></script>
-    <script src="//cdn.jsdelivr.net/bluebird/latest/bluebird.min.js"></script>
-    <script src="//cdnjs.cloudflare.com/ajax/libs/numeral.js/1.5.3/numeral.min.js"></script>
-    <script src="sim.js"></script>
-    <script>
-      Sim.init().then(function () {
+<body>
+<div id="log" style="margin:50px;"></div>
+
+<script src="//cdnjs.cloudflare.com/ajax/libs/d3/3.5.5/d3.min.js"></script>
+<script src="//cdnjs.cloudflare.com/ajax/libs/underscore.js/1.8.3/underscore-min.js"></script>
+<script src="//cdn.jsdelivr.net/bluebird/latest/bluebird.min.js"></script>
+<script src="//cdnjs.cloudflare.com/ajax/libs/numeral.js/1.5.3/numeral.min.js"></script>
+<script src="sim.js"></script>
+<script>
+    (function () {
+        if (!console) {
+            console = {};
+        }
+        var old = console.log;
+        var logger = document.getElementById('log');
+        console.log = function (message) {
+            if (typeof message == 'object') {
+                logger.innerHTML += (JSON && JSON.stringify ? JSON.stringify(message) : String(message)) + '<br />';
+            } else {
+                logger.innerHTML += message + '<br />';
+            }
+        }
+    })();
+
+    Sim.init().then(function () {
         console.log('computing zone vars');
         Sim.allZoneVars();
         console.log('running rsh');
@@ -23,7 +42,7 @@
         Sim.zonePriceVars();
         console.log('running developer');
         Sim.developer();
-      });
-    </script>
-  </body>
+    });
+</script>
+</body>
 </html>

@@ -35,7 +35,7 @@ Sim = {
 
 
     loadLogsums: function (resolve, reject) {
-        d3.csv("logsums.csv", function (d) {
+        d3.csv("data/logsums.csv", function (d) {
             l = {};
             _.each(d, function (obj) {
                 this[+obj.taz] = obj;
@@ -47,7 +47,7 @@ Sim = {
 
 
     loadJson: function (resolve, reject) {
-        d3.json("hay2.json", function (e, d) {
+        d3.json("data/hay2.json", function (e, d) {
 
             if (e) return reject(e);
 
@@ -77,11 +77,11 @@ Sim = {
             return numeral(n).format('0,0');
         }
 
-        console.log("min", fmt(d3.quantile(arr, 0.0)));
-        console.log("25%", fmt(d3.quantile(arr, 0.25)));
-        console.log("median", fmt(d3.quantile(arr, 0.5)));
-        console.log("75%", fmt(d3.quantile(arr, 0.75)));
-        console.log("max", fmt(d3.quantile(arr, 1.0)));
+        console.log("min: " + fmt(d3.quantile(arr, 0.0)));
+        console.log("25%: " + fmt(d3.quantile(arr, 0.25)));
+        console.log("median: " + fmt(d3.quantile(arr, 0.5)));
+        console.log("75%: " + fmt(d3.quantile(arr, 0.75)));
+        console.log("max: " + fmt(d3.quantile(arr, 1.0)));
     },
 
 
